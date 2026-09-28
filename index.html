@@ -1076,6 +1076,24 @@ function showToast(msg) {
   setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
+function downloadCanvasPng(canvas, filename) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => {
+      if (!blob) {
+        reject(new Error('PNG encoding failed'));
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = url;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      resolve();
+    }, 'image/png');
+  });
+}
+
 async function exportPng(elementId, filename) {
   const el = document.getElementById(elementId);
   if (!el) return;
@@ -1097,10 +1115,7 @@ async function exportPng(elementId, filename) {
     });
     document.body.removeChild(clone);
 
-    const link = document.createElement('a');
-    link.download = filename;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+    await downloadCanvasPng(canvas, filename);
     showToast('PNG downloaded');
   } catch (err) {
     showToast('Export failed');
@@ -1195,6 +1210,14 @@ window.addEventListener('DOMContentLoaded', () => {
 // Report generation function
 async function generateReportPng() {
   const reportContainer = document.getElementById('reportContainer');
+  const button = document.getElementById('generateReportBtn');
+  if (!window.html2canvas) {
+    showToast('Report tool is still loading — please try again');
+    return;
+  }
+  button.disabled = true;
+  button.textContent = '⏳ Generating…';
+  try {
   const now = new Date();
   const dateStr = now.getFullYear() + '-' + 
     String(now.getMonth()+1).padStart(2,'0') + '-' + 
@@ -1310,8 +1333,13 @@ async function generateReportPng() {
   reportContainer.style.top = '0';
 
   const bg = '#f8fafc';
+  // Browser canvases become unreliable above roughly 32,000 pixels in height.
+  // Preserve maximum detail where possible, while keeping long reports viewable.
+  const requestedScale = 3.2; // 1200px report width → 3840px (4K) output width
+  const maxCanvasHeight = 30000;
+  const scale = Math.min(requestedScale, maxCanvasHeight / Math.max(reportContainer.scrollHeight, 1));
   const canvas = await html2canvas(reportContainer, {
-    backgroundColor: bg, scale: 3.2, useCORS: true, logging: false, width: 1200
+    backgroundColor: bg, scale, useCORS: true, logging: false, width: 1200
   });
 
   // Hide again
@@ -1319,11 +1347,18 @@ async function generateReportPng() {
   reportContainer.style.position = 'fixed';
   reportContainer.style.left = '-9999px';
 
-  const link = document.createElement('a');
-  link.download = 'call-duration-report-' + dateStr.replace(/[: ]/g, '-') + '.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-  showToast('Report PNG downloaded');
+  await downloadCanvasPng(canvas, 'call-duration-report-' + dateStr.replace(/[: ]/g, '-') + '.png');
+  showToast(scale < requestedScale ? 'Report PNG downloaded (optimized for reliable viewing)' : 'Report PNG downloaded');
+  } catch (error) {
+    console.error('Report generation failed', error);
+    showToast('Report generation failed — please try again');
+  } finally {
+    reportContainer.style.visibility = 'hidden';
+    reportContainer.style.position = 'fixed';
+    reportContainer.style.left = '-9999px';
+    button.disabled = false;
+    button.textContent = '📄 Generate Report';
+  }
 }
 
 document.getElementById('generateReportBtn').addEventListener('click', generateReportPng);
