@@ -561,6 +561,21 @@ const REQUESTED_SMALL_TEAMS = [
   'ME-EGSS-GCC02 Team','ME-EGSS-GCC04 Team','ME-EGSS-GCC06 Team'
 ];
 const REQUESTED_TEAM_SET = new Set(REQUESTED_SMALL_TEAMS);
+// CRM uses the Chinese small-team suffix for GCC and omits one space in the
+// expired-team name. Normalize those variants before filtering or calculating.
+const TEAM_NAME_ALIASES = new Map([
+  ['ME-Expired-EGSSTeam1', 'ME-Expired-EGSS Team1'],
+  ['ME-EGSS-GCC01小组', 'ME-EGSS-GCC01 Team'],
+  ['ME-EGSS-GCC02小组', 'ME-EGSS-GCC02 Team'],
+  ['ME-EGSS-GCC03小组', 'ME-EGSS-GCC03 Team'],
+  ['ME-EGSS-GCC04小组', 'ME-EGSS-GCC04 Team'],
+  ['ME-EGSS-GCC05小组', 'ME-EGSS-GCC05 Team'],
+  ['ME-EGSS-GCC06小组', 'ME-EGSS-GCC06 Team']
+]);
+
+function normalizeTeamName(name) {
+  return TEAM_NAME_ALIASES.get(name) || name;
+}
 
 function getTargets() {
   return {
@@ -579,7 +594,7 @@ function parseAllAgents(text) {
       const cols = line.split('\t').map(value => value.trim());
       if (/^\d+$/.test(cols[0]) && team && cols.length >= 15) {
         rows.push({
-          org_name: team,
+          org_name: normalizeTeamName(team),
           useraccount: cols[1] || '',
           earliestCall: cols[2] || '',
           latestCall: cols[3] || '',
@@ -602,7 +617,7 @@ function parseAllAgents(text) {
     const cols = line.split('\t');
     const crmExport = cols.length >= 11;
     return {
-      org_name: cols[0]?.trim() || '',
+      org_name: normalizeTeamName(cols[0]?.trim() || ''),
       useraccount: cols[1]?.trim() || '',
       earliestCall: crmExport ? (cols[4]?.trim() || '') : (cols[2]?.trim() || ''),
       latestCall: crmExport ? (cols[5]?.trim() || '') : (cols[3]?.trim() || ''),
