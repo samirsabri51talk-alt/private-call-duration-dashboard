@@ -301,6 +301,37 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
   border-bottom: 1px solid var(--border); color: var(--text);
 }
 
+.agent-ranking-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.agent-ranking-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 22px; background: var(--card); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.agent-ranking-card.top { border-top: 4px solid var(--green); }
+.agent-ranking-card.bottom { border-top: 4px solid var(--red); }
+.agent-ranking-card h3 { font-size: 16px; margin: 0 0 6px; }
+.agent-ranking-card p { color: var(--text-secondary); font-size: 13px; margin: 0 0 14px; }
+.ranking-list { display: grid; gap: 8px; }
+.ranking-row {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px; align-items: center; padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ranking-row:last-child { border-bottom: 0; }
+.ranking-number {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%; font-size: 12px; font-weight: 800;
+  background: var(--surface); color: var(--text-secondary);
+}
+.top .ranking-row:nth-child(-n+3) .ranking-number { background: var(--green-bg); color: var(--green); }
+.agent-ranking-name { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
+.agent-ranking-team { display: block; font-size: 12px; color: var(--text-secondary); margin-top: 3px; overflow-wrap: anywhere; }
+.ranking-value { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 14px; }
+.ranking-value small { display: block; color: var(--text-secondary); font-size: 11px; font-weight: 600; margin-top: 2px; }
+
 .insights-grid {
   display: grid; grid-template-columns: repeat(2, 1fr);
   gap: 18px;
@@ -342,6 +373,7 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
 @media (max-width: 1024px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .team-detail-grid { grid-template-columns: 1fr; }
+  .agent-ranking-grid { grid-template-columns: 1fr; }
   .insights-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
@@ -420,6 +452,13 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
 
   <div id="dashboardContent" style="display: none;">
     <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="section" id="agentRankingsSection">
+      <div class="section-header">
+        <h2>Agent Leaderboard</h2>
+      </div>
+      <div class="agent-ranking-grid" id="agentRankingsGrid"></div>
+    </div>
 
     <div class="insights-grid" id="insightsGrid"></div>
 
@@ -689,7 +728,7 @@ function renderInsights(data) {
 
   const teamPerf = teams.map(team => {
     const members = data.filter(d => d.org_name === team);
-    const avgRate = members.reduce((s, d) => s + d.effRate, 0) / members.length;
+    const avgRate = members.length ? members.reduce((s, d) => s + d.effRate, 0) / members.length : 0;
     return { team, avgRate, totalCalls: members.reduce((s, d) => s + d.totalCalls, 0) };
   }).sort((a, b) => b.avgRate - a.avgRate);
 
@@ -769,15 +808,49 @@ function renderInsights(data) {
   document.getElementById('insightsGrid').innerHTML = html || '<div class="insight-card"><h3>ℹ️ No insights</h3><ul><li>All agents are performing within normal parameters.</li></ul></div>';
 }
 
+function renderAgentRankings(data) {
+  const grid = document.getElementById('agentRankingsGrid');
+  const sorted = [...data].sort((a, b) =>
+    b.effectiveCalls - a.effectiveCalls || b.effRate - a.effRate || b.totalDuration - a.totalDuration
+  );
+  const topTen = sorted.slice(0, 10);
+  const bottomTen = [...sorted].reverse().slice(0, 10);
+
+  const rows = (agents, type) => agents.length ? agents.map((agent, index) => `
+    <div class="ranking-row">
+      <span class="ranking-number">${index + 1}</span>
+      <div>
+        <div class="agent-ranking-name">${agent.useraccount}</div>
+        <span class="agent-ranking-team">${agent.org_name}</span>
+      </div>
+      <div class="ranking-value">${fmt(agent.effectiveCalls)}<small>${agent.effRate.toFixed(1)}% effective</small></div>
+    </div>
+  `).join('') : '<p>No agents in the loaded report.</p>';
+
+  grid.innerHTML = `
+    <article class="agent-ranking-card top">
+      <h3>🏆 Top 10 Agents</h3>
+      <p>Ranked by total valid calls, then effective-call rate.</p>
+      <div class="ranking-list">${rows(topTen, 'top')}</div>
+    </article>
+    <article class="agent-ranking-card bottom">
+      <h3>📉 Bottom 10 Agents</h3>
+      <p>Lowest total valid calls in the loaded report.</p>
+      <div class="ranking-list">${rows(bottomTen, 'bottom')}</div>
+    </article>
+  `;
+}
+
 function renderDashboard(data) {
   currentData = data;
   document.getElementById('dashboardContent').style.display = 'block';
   const targets = getTargets();
   renderRagTable();
+  renderAgentRankings(data);
   renderInsights(data);
 
   const totalAgents = data.length;
-  const teams = [...new Set(data.map(d => d.org_name))];
+  const teams = REQUESTED_SMALL_TEAMS;
   const totalTeams = teams.length;
   const avgEffCalls = totalAgents ? data.reduce((s, d) => s + d.effectiveCalls, 0) / totalAgents : 0;
   const avgDuration = totalAgents ? data.reduce((s, d) => s + d.avgDuration, 0) / totalAgents : 0;
@@ -939,7 +1012,7 @@ async function exportPng(elementId, filename) {
 
     const bg = '#f8fafc';
     const canvas = await html2canvas(clone, {
-      backgroundColor: bg, scale: 2, useCORS: true, logging: false
+      backgroundColor: bg, scale: 3, useCORS: true, logging: false
     });
     document.body.removeChild(clone);
 
@@ -1102,6 +1175,9 @@ async function generateReportPng() {
   const teamDetailEl = document.getElementById('teamDetailSection').cloneNode(true);
   const teamDetailClone = teamDetailEl.outerHTML;
 
+  const rankingsEl = document.getElementById('agentRankingsSection').cloneNode(true);
+  const rankingsClone = rankingsEl.outerHTML;
+
   // Build report content
   reportContainer.innerHTML = `
     <div style="max-width:1440px;margin:0 auto;">
@@ -1117,6 +1193,7 @@ async function generateReportPng() {
       </div>
       ${ragTableHtml}
       ${kpiClone}
+      ${rankingsClone}
       ${teamTotalsClone}
       ${teamDetailClone}
       <div style="margin-top:28px;padding:24px;background:linear-gradient(135deg,#4f46e5,#06b6d4);border-radius:var(--radius);color:white;text-align:center;font-size:20px;font-weight:700;letter-spacing:-0.01em;">
@@ -1133,7 +1210,7 @@ async function generateReportPng() {
 
   const bg = '#f8fafc';
   const canvas = await html2canvas(reportContainer, {
-    backgroundColor: bg, scale: 2, useCORS: true, logging: false, width: 1200
+    backgroundColor: bg, scale: 3.2, useCORS: true, logging: false, width: 1200
   });
 
   // Hide again
