@@ -981,7 +981,7 @@ function renderDashboard(data) {
       <div class="kpi-sub">Target: ${fmt(targets.effCalls)}</div>
     </div>
     <div class="kpi-card">
-      <h3>Avg Duration</h3>
+      <h3>Average Call Time</h3>
       <div class="kpi-value">${fmt(avgDuration)}m</div>
       <div class="kpi-sub">Per call average</div>
     </div>
@@ -1265,6 +1265,7 @@ async function generateReportPng() {
     String(now.getSeconds()).padStart(2,'0');
 
   const targets = getTargets();
+  const averageCallTime = currentData.length ? currentData.reduce((sum, agent) => sum + (Number(agent.avgDuration) || 0), 0) / currentData.length : 0;
   const greenEff = Math.ceil(targets.effCalls * 0.9);
   const amberEffMin = Math.ceil(targets.effCalls * 0.7);
   const greenDur = Math.ceil(targets.duration * 0.9);
@@ -1351,7 +1352,7 @@ async function generateReportPng() {
         </div>
       </div>
       <div style="margin-bottom:20px;font-size:13px;color:var(--text-secondary);font-weight:500;">
-        Generated: ${dateStr}
+        Generated: ${dateStr} &nbsp;•&nbsp; <strong style="color:var(--text);">Average Call Time: ${fmt(averageCallTime)} min</strong>
       </div>
       ${ragTableHtml}
       ${kpiClone}
