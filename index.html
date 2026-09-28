@@ -259,6 +259,15 @@ body {
 .pill.green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
 .pill.amber { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
 .pill.red { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+.pill.duration { gap: 6px; min-width: 76px; box-shadow: 0 2px 8px rgba(15,23,42,.06); }
+.pill-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .78; }
+.workspace-tabs { display:flex; gap:10px; flex-wrap:wrap; margin:0 0 20px; padding:8px; background:rgba(255,255,255,.74); border:1px solid var(--border); border-radius:18px; box-shadow:var(--shadow); }
+.workspace-tab { border:0; background:transparent; color:var(--text-secondary); padding:10px 16px; border-radius:12px; font:inherit; font-weight:700; cursor:pointer; }
+.workspace-tab.active { background:linear-gradient(135deg,#4f46e5,#06b6d4); color:#fff; box-shadow:0 5px 14px rgba(79,70,229,.22); }
+.report-tab[hidden] { display:none; }
+.special-report { max-width:900px; margin:0 auto; }
+.special-report textarea { min-height:260px; width:100%; resize:vertical; margin:16px 0; padding:16px; border:1px solid var(--border); border-radius:14px; font:inherit; line-height:1.55; background:#fff; color:var(--text); }
+.report-note { color:var(--text-secondary); line-height:1.55; margin:0; }
 
 .section {
   background: var(--card); border: 1px solid var(--border);
@@ -414,6 +423,14 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
     </div>
   </div>
 
+  <div class="workspace-tabs" role="tablist" aria-label="Dashboard reports">
+    <button class="workspace-tab active" type="button" role="tab" aria-selected="true" data-tab="callReportTab">📞 Call Report</button>
+    <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-tab="sopsTab">📋 SOPs</button>
+    <button class="workspace-tab" type="button" role="tab" aria-selected="false" data-tab="englishClubTab">🗣 English Club</button>
+  </div>
+
+  <section class="report-tab" id="callReportTab">
+
   <div class="rag-table-panel" id="ragPanel">
     <h3>🎯 Performance Targets</h3>
     <div class="target-inputs">
@@ -482,6 +499,10 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
     <div class="section" id="agentRankingsSection">
       <div class="section-header">
         <h2>Agent Leaderboard</h2>
+        <div class="header-actions">
+          <button class="btn" type="button" id="generateTop10Btn">📄 Top 10 PNG</button>
+          <button class="btn" type="button" id="generateBottom10Btn">📄 Bottom 10 PNG</button>
+        </div>
       </div>
       <div class="agent-ranking-grid" id="agentRankingsGrid"></div>
     </div>
@@ -542,6 +563,23 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
       </div>
     </div>
   </div>
+  </section>
+
+  <section class="report-tab" id="sopsTab" hidden>
+    <div class="section special-report">
+      <div class="section-header"><h2>📋 SOPs Report</h2><button class="btn btn-primary" type="button" id="generateSopsBtn">📄 Generate SOPs PNG</button></div>
+      <p class="report-note">Paste the SOPs update, completion results, findings, and action items. The generated PNG is separate from the call report.</p>
+      <textarea id="sopsInput" placeholder="Paste SOPs report content here…"></textarea>
+    </div>
+  </section>
+
+  <section class="report-tab" id="englishClubTab" hidden>
+    <div class="section special-report">
+      <div class="section-header"><h2>🗣 English Club Report</h2><button class="btn btn-primary" type="button" id="generateEnglishClubBtn">📄 Generate English Club PNG</button></div>
+      <p class="report-note">Paste the English Club attendance, activities, feedback, and next actions. The generated PNG is separate from the call report.</p>
+      <textarea id="englishClubInput" placeholder="Paste English Club report content here…"></textarea>
+    </div>
+  </section>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -717,7 +755,7 @@ function renderRagTable() {
 
 function renderDurPill(totalDuration, target) {
   const rag = getRagPercent(totalDuration, target);
-  return `<span class="pill ${rag}">${fmt(totalDuration)}</span>`;
+  return `<span class="pill duration ${rag}"><span class="pill-dot"></span>${fmt(totalDuration)}m</span>`;
 }
 
 function renderEffPill(effectiveCalls, target) {
@@ -977,7 +1015,7 @@ function renderDashboard(data) {
       <td><strong>${t.team}</strong></td>
       <td class="num">${fmt(t.members)}</td>
       <td class="num">${fmt(t.totalEffCalls)}</td>
-      <td class="num">${fmt(t.totalDuration)}</td>
+      <td class="num">${renderDurPill(t.totalDuration, targets.duration * Math.max(t.members, 1))}</td>
       <td class="num">${fmt(t.avgEffCalls)}</td>
       <td class="num">${fmt(t.avgCallTime)}m</td>
     </tr>
@@ -986,7 +1024,7 @@ function renderDashboard(data) {
       <td><strong>Total / Average</strong></td>
       <td class="num">${fmt(teamStats.reduce((s, t) => s + t.members, 0))}</td>
       <td class="num">${fmt(teamStats.reduce((s, t) => s + t.totalEffCalls, 0))}</td>
-      <td class="num">${fmt(teamStats.reduce((s, t) => s + t.totalDuration, 0))}</td>
+      <td class="num">${renderDurPill(teamStats.reduce((s, t) => s + t.totalDuration, 0), targets.duration * Math.max(teamStats.reduce((s, t) => s + t.members, 0), 1))}</td>
       <td class="num">${teamStats.length ? fmt(teamStats.reduce((s, t) => s + t.avgEffCalls, 0) / teamStats.length) : 0}</td>
       <td class="num">${teamStats.length ? fmt(teamStats.reduce((s, t) => s + t.avgCallTime, 0) / teamStats.length) : 0}m</td>
     </tr>
@@ -1006,7 +1044,7 @@ function renderDashboard(data) {
         <td class="num">${fmt(m.totalCalls)}</td>
         <td class="num">${fmt(m.effectiveCalls)}</td>
         <td class="num">${m.effRate.toFixed(2)}%</td>
-        <td class="num">${fmt(m.totalDuration)}</td>
+        <td class="num">${renderDurPill(m.totalDuration, targets.duration)}</td>
         <td class="num">${fmt(m.avgDuration)}</td>
       </tr>
     `).join('');
@@ -1043,7 +1081,7 @@ function renderDashboard(data) {
                 <td class="num"><strong>${fmt(totalCalls)}</strong></td>
                 <td class="num"><strong>${fmt(totalEff)}</strong></td>
                 <td class="num"><strong>${totalCalls ? (totalEff / totalCalls * 100).toFixed(2) : '0.00'}%</strong></td>
-                <td class="num"><strong>${fmt(totalDur)}</strong></td>
+                <td class="num">${renderDurPill(totalDur, targets.duration * Math.max(members.length, 1))}</td>
                 <td class="num"><strong>${members.length ? fmt(members.reduce((s, d) => s + d.avgDuration, 0) / members.length) : 0}</strong></td>
               </tr>
             </tbody>
@@ -1063,7 +1101,7 @@ function renderDashboard(data) {
       <td class="num">${fmt(d.totalCalls)}</td>
       <td class="num">${fmt(d.effectiveCalls)}</td>
       <td class="num">${d.effRate.toFixed(2)}%</td>
-      <td class="num">${fmt(d.totalDuration)}</td>
+      <td class="num">${renderDurPill(d.totalDuration, targets.duration)}</td>
       <td class="num">${fmt(d.avgDuration)}</td>
     </tr>
   `).join('');
@@ -1362,6 +1400,107 @@ async function generateReportPng() {
 }
 
 document.getElementById('generateReportBtn').addEventListener('click', generateReportPng);
+
+function reportTimestamp() {
+  return new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+}
+
+async function captureCompactReport(title, subtitle, bodyHtml, filename) {
+  if (!window.html2canvas) {
+    showToast('Report tool is still loading — please try again');
+    return;
+  }
+  const reportContainer = document.getElementById('reportContainer');
+  reportContainer.innerHTML = `
+    <div style="max-width:1200px;margin:0 auto;">
+      <div style="padding:26px 28px;background:linear-gradient(135deg,#312e81,#0891b2);color:#fff;border-radius:22px 22px 0 0;">
+        <div style="font-size:28px;font-weight:800;letter-spacing:-.03em;">${title}</div>
+        <div style="margin-top:7px;opacity:.88;font-size:14px;">${subtitle} · Generated ${reportTimestamp()}</div>
+      </div>
+      <div style="padding:28px;background:#f8fafc;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 22px 22px;">${bodyHtml}</div>
+    </div>`;
+  reportContainer.style.visibility = 'visible';
+  reportContainer.style.position = 'absolute';
+  reportContainer.style.left = '0';
+  reportContainer.style.top = '0';
+  try {
+    const scale = Math.min(3.2, 30000 / Math.max(reportContainer.scrollHeight, 1));
+    const canvas = await html2canvas(reportContainer, { backgroundColor: '#f8fafc', scale, useCORS: true, logging: false, width: 1200 });
+    await downloadCanvasPng(canvas, filename);
+    showToast('Report PNG downloaded');
+  } catch (error) {
+    console.error('Compact report generation failed', error);
+    showToast('Report generation failed — please try again');
+  } finally {
+    reportContainer.style.visibility = 'hidden';
+    reportContainer.style.position = 'fixed';
+    reportContainer.style.left = '-9999px';
+  }
+}
+
+async function generateRankingReport(kind) {
+  if (!currentData.length) {
+    showToast('Load report data first');
+    return;
+  }
+  const button = document.getElementById(kind === 'top' ? 'generateTop10Btn' : 'generateBottom10Btn');
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = '⏳ Generating…';
+  try {
+    const sorted = [...currentData].sort((a, b) =>
+      b.effectiveCalls - a.effectiveCalls || b.effRate - a.effRate || b.totalDuration - a.totalDuration
+    );
+    const agents = kind === 'top' ? sorted.slice(0, 10) : sorted.slice(-10).reverse();
+    const target = getTargets().duration;
+    const rows = agents.map((agent, index) => `
+      <tr>
+        <td style="font-weight:800;color:${kind === 'top' ? '#059669' : '#dc2626'};">${index + 1}</td>
+        <td><strong>${escapeHtml(agent.useraccount)}</strong><br><span style="font-size:12px;color:#64748b;">${escapeHtml(agent.org_name)}</span></td>
+        <td style="text-align:right">${fmt(agent.effectiveCalls)}</td>
+        <td style="text-align:right">${agent.effRate.toFixed(2)}%</td>
+        <td style="text-align:right">${renderDurPill(agent.totalDuration, target)}</td>
+        <td style="text-align:right">${fmt(agent.avgDuration)}m</td>
+      </tr>`).join('');
+    const label = kind === 'top' ? 'Top 10 Agents' : 'Bottom 10 Agents';
+    await captureCompactReport(
+      label,
+      'Call Duration Dashboard',
+      `<table style="width:100%;border-collapse:collapse;font-size:15px;"><thead><tr style="background:#eef2ff;color:#334155;"><th style="padding:14px;text-align:left">Rank</th><th style="padding:14px;text-align:left">Agent / Team</th><th style="padding:14px;text-align:right">Valid Calls</th><th style="padding:14px;text-align:right">Effective Rate</th><th style="padding:14px;text-align:right">Total Duration</th><th style="padding:14px;text-align:right">Avg. Call</th></tr></thead><tbody>${rows}</tbody></table>`,
+      `${kind}-10-agents-${new Date().toISOString().slice(0, 10)}.png`
+    );
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+async function generateTextReport(inputId, title, filename) {
+  const content = document.getElementById(inputId).value.trim();
+  if (!content) {
+    showToast('Paste report content first');
+    return;
+  }
+  await captureCompactReport(title, 'Private dashboard report', `<div style="white-space:pre-wrap;line-height:1.7;font-size:16px;color:#1e293b;">${escapeHtml(content)}</div>`, `${filename}-${new Date().toISOString().slice(0, 10)}.png`);
+}
+
+document.querySelectorAll('.workspace-tab').forEach(button => button.addEventListener('click', () => {
+  const target = button.dataset.tab;
+  document.querySelectorAll('.workspace-tab').forEach(tab => {
+    const active = tab === button;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  document.querySelectorAll('.report-tab').forEach(panel => { panel.hidden = panel.id !== target; });
+}));
+document.getElementById('generateTop10Btn').addEventListener('click', () => generateRankingReport('top'));
+document.getElementById('generateBottom10Btn').addEventListener('click', () => generateRankingReport('bottom'));
+document.getElementById('generateSopsBtn').addEventListener('click', () => generateTextReport('sopsInput', 'SOPs Report', 'sops-report'));
+document.getElementById('generateEnglishClubBtn').addEventListener('click', () => generateTextReport('englishClubInput', 'English Club Report', 'english-club-report'));
 
 async function sendLatestReportToDingTalk() {
   if (!currentData.length) {
