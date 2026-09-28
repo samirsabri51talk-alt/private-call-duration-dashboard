@@ -196,6 +196,17 @@ body {
 .exclude-input-row select option {
   background: var(--card); color: var(--text);
 }
+.exclude-search {
+  min-width: 190px; height: 42px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 0 14px;
+  color: var(--text); font: inherit;
+}
+.exclude-search:focus { outline: none; border-color: var(--primary); }
+@media (max-width: 640px) {
+  .exclude-input-row { flex-wrap: wrap; }
+  .exclude-search { width: 100%; }
+}
 
 .data-panel {
   background: var(--card); border: 1px solid var(--border);
@@ -399,6 +410,7 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
     </div>
     <div class="header-actions">
       <button class="btn btn-primary" id="generateReportBtn">📄 Generate Report</button>
+      <button class="btn" id="sendDingtalkBtn" disabled>💬 Send to B.S Team</button>
     </div>
   </div>
 
@@ -436,8 +448,20 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
     <p>Select employee usernames from the loaded data to exclude them from the report.</p>
     <div class="exclude-tags" id="excludeTags"></div>
     <div class="exclude-input-row">
+      <input type="search" id="employeeSearch" class="exclude-search" placeholder="Search employee…" aria-label="Search employees">
       <select id="excludeSelect"><option value="">-- Select employee --</option></select>
       <button class="btn" id="addExcludeBtn">Add</button>
+    </div>
+  </div>
+
+  <div class="exclude-panel" id="teamExcludePanel">
+    <h3>🚫 Exclude Teams</h3>
+    <p>Remove an entire small team and all of its agents from this dashboard and downloaded reports.</p>
+    <div class="exclude-tags" id="excludeTeamTags"></div>
+    <div class="exclude-input-row">
+      <input type="search" id="teamSearch" class="exclude-search" placeholder="Search team…" aria-label="Search teams">
+      <select id="excludeTeamSelect"><option value="">-- Select team --</option></select>
+      <button class="btn" id="addExcludeTeamBtn">Add</button>
     </div>
   </div>
 
@@ -541,6 +565,7 @@ ME-EGSS20	EGSS-nada	2024-01-15 09:00	2024-01-15 17:15	2024-01-15 09:15	2024-01-1
 
 let currentData = [];
 let excludedAgents = new Set();
+let excludedTeams = new Set();
 let allParsedAgents = []; // all agents from data input (before exclusion)
 const PARENT_OR_TOTAL_TEAMS = new Set([
   'ME-EGSS03大组', 'ME-EGSS06大组', 'ME-EGSS02大组',
@@ -635,9 +660,14 @@ function parseAllAgents(text) {
 function getFilteredData() {
   return allParsedAgents.filter(d =>
     !excludedAgents.has(d.useraccount) &&
+    !excludedTeams.has(d.org_name) &&
     !PARENT_OR_TOTAL_TEAMS.has(d.org_name) &&
     REQUESTED_TEAM_SET.has(d.org_name)
   );
+}
+
+function getActiveTeams() {
+  return REQUESTED_SMALL_TEAMS.filter(team => !excludedTeams.has(team));
 }
 
 /* ── RAG Logic based on percentage of target ── */
@@ -697,14 +727,26 @@ function renderEffPill(effectiveCalls, target) {
 
 function updateExcludeDropdown() {
   const select = document.getElementById('excludeSelect');
+  const query = document.getElementById('employeeSearch').value.trim().toLowerCase();
   const available = allParsedAgents
     .map(d => d.useraccount)
     .filter((v, i, a) => a.indexOf(v) === i)
     .filter(name => !excludedAgents.has(name))
+    .filter(name => !query || name.toLowerCase().includes(query))
     .sort();
 
   select.innerHTML = '<option value="">-- Select employee --</option>' +
     available.map(name => `<option value="${name}">${name}</option>`).join('');
+}
+
+function updateTeamExcludeDropdown() {
+  const select = document.getElementById('excludeTeamSelect');
+  const query = document.getElementById('teamSearch').value.trim().toLowerCase();
+  const available = getActiveTeams()
+    .filter(team => !query || team.toLowerCase().includes(query))
+    .sort();
+  select.innerHTML = '<option value="">-- Select team --</option>' +
+    available.map(team => `<option value="${team}">${team}</option>`).join('');
 }
 
 function renderExcludeTags() {
@@ -732,11 +774,32 @@ function renderExcludeTags() {
   });
 }
 
+function renderTeamExcludeTags() {
+  const container = document.getElementById('excludeTeamTags');
+  if (excludedTeams.size === 0) {
+    container.innerHTML = '<span style="color:var(--text-secondary);font-size:13px;">No excluded teams</span>';
+    return;
+  }
+  container.innerHTML = Array.from(excludedTeams).map(team => `
+    <span class="exclude-tag" data-team="${team}">
+      ${team} <span class="remove">×</span>
+    </span>
+  `).join('');
+  container.querySelectorAll('.exclude-tag').forEach(tag => {
+    tag.addEventListener('click', () => {
+      excludedTeams.delete(tag.dataset.team);
+      renderTeamExcludeTags();
+      updateTeamExcludeDropdown();
+      if (allParsedAgents.length) renderDashboard(getFilteredData());
+    });
+  });
+}
+
 function renderInsights(data) {
   const targets = getTargets();
   // Preserve the requested team order and include an empty card when a team has no
   // members in the pasted report, making missing CRM data immediately visible.
-  const teams = REQUESTED_SMALL_TEAMS;
+  const teams = getActiveTeams();
 
   const zeroEff = data.filter(d => d.effectiveCalls === 0);
   const highPerf = data.filter(d => d.effRate >= 50).sort((a,b) => b.effRate - a.effRate);
@@ -860,6 +923,7 @@ function renderAgentRankings(data) {
 
 function renderDashboard(data) {
   currentData = data;
+  document.getElementById('sendDingtalkBtn').disabled = data.length === 0;
   document.getElementById('dashboardContent').style.display = 'block';
   const targets = getTargets();
   renderRagTable();
@@ -867,7 +931,7 @@ function renderDashboard(data) {
   renderInsights(data);
 
   const totalAgents = data.length;
-  const teams = REQUESTED_SMALL_TEAMS;
+  const teams = getActiveTeams();
   const totalTeams = teams.length;
   const avgEffCalls = totalAgents ? data.reduce((s, d) => s + d.effectiveCalls, 0) / totalAgents : 0;
   const avgDuration = totalAgents ? data.reduce((s, d) => s + d.avgDuration, 0) / totalAgents : 0;
@@ -1063,16 +1127,32 @@ function addExclude() {
   showToast(`Excluded: ${name}`);
 }
 
+function addTeamExclude() {
+  const select = document.getElementById('excludeTeamSelect');
+  const team = select.value;
+  if (!team) return;
+  excludedTeams.add(team);
+  select.value = '';
+  renderTeamExcludeTags();
+  updateTeamExcludeDropdown();
+  if (allParsedAgents.length) renderDashboard(getFilteredData());
+  showToast(`Excluded team: ${team}`);
+}
+
 document.getElementById('loadDataBtn').addEventListener('click', () => {
   const text = document.getElementById('dataInput').value;
   if (!text.trim()) { showToast('Please paste data first'); return; }
   allParsedAgents = parseAllAgents(text);
   if (!allParsedAgents.length) { showToast('No valid data found'); return; }
   updateExcludeDropdown();
+  updateTeamExcludeDropdown();
   const data = getFilteredData();
   renderDashboard(data);
   showToast(`${fmt(data.length)} records loaded`);
 });
+
+document.getElementById('employeeSearch').addEventListener('input', updateExcludeDropdown);
+document.getElementById('teamSearch').addEventListener('input', updateTeamExcludeDropdown);
 
 
 
@@ -1093,13 +1173,16 @@ document.getElementById('downloadAgentDetailPng').addEventListener('click', () =
 });
 
 document.getElementById('addExcludeBtn').addEventListener('click', addExclude);
+document.getElementById('addExcludeTeamBtn').addEventListener('click', addTeamExclude);
 
 window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('dataInput').value = SAMPLE_DATA;
   renderExcludeTags();
+  renderTeamExcludeTags();
   renderRagTable();
   allParsedAgents = parseAllAgents(SAMPLE_DATA);
   updateExcludeDropdown();
+  updateTeamExcludeDropdown();
   const data = getFilteredData();
   renderDashboard(data);
 });
@@ -1244,6 +1327,48 @@ async function generateReportPng() {
 }
 
 document.getElementById('generateReportBtn').addEventListener('click', generateReportPng);
+
+async function sendLatestReportToDingTalk() {
+  if (!currentData.length) {
+    showToast('Load report data first');
+    return;
+  }
+  const btn = document.getElementById('sendDingtalkBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Sending…';
+  const totalCalls = currentData.reduce((sum, a) => sum + (Number(a.totalCalls) || 0), 0);
+  const totalValid = currentData.reduce((sum, a) => sum + (Number(a.effectiveCalls) || 0), 0);
+  const totalMinutes = currentData.reduce((sum, a) => sum + (Number(a.totalDuration) || 0), 0);
+  const top = [...currentData].sort((a, b) =>
+    b.effectiveCalls - a.effectiveCalls || b.effRate - a.effRate || b.totalDuration - a.totalDuration
+  ).slice(0, 10);
+  const markdown = [
+    `## Call Duration Report — ${new Date().toLocaleString()}`,
+    `- Agents: **${currentData.length}**`,
+    `- Total calls: **${fmt(totalCalls)}**`,
+    `- Total valid calls: **${fmt(totalValid)}**`,
+    `- Effective call time: **${fmt(totalMinutes)} minutes**`,
+    '',
+    '**Top agents**',
+    ...top.map((a, i) => `${i + 1}. ${a.useraccount} — ${fmt(a.effectiveCalls)} valid calls (${a.effRate.toFixed(1)}%)`)
+  ].join('\n');
+  try {
+    const response = await fetch('/api/dingtalk/report', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ title: 'Call Duration Report', markdown })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    showToast('Report sent to B.S Team');
+  } catch (error) {
+    showToast(`DingTalk not sent: ${error.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💬 Send to B.S Team';
+  }
+}
+
+document.getElementById('sendDingtalkBtn').addEventListener('click', sendLatestReportToDingTalk);
 </script>
 
 </body>
