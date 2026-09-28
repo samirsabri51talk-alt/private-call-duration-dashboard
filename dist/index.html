@@ -567,17 +567,19 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
 
   <section class="report-tab" id="sopsTab" hidden>
     <div class="section special-report">
-      <div class="section-header"><h2>📋 SOPs Report</h2><button class="btn btn-primary" type="button" id="generateSopsBtn">📄 Generate SOPs PNG</button></div>
-      <p class="report-note">Paste the SOPs update, completion results, findings, and action items. The generated PNG is separate from the call report.</p>
-      <textarea id="sopsInput" placeholder="Paste SOPs report content here…"></textarea>
+      <div class="section-header"><h2>📋 SOPs Report</h2><div class="header-actions"><button class="btn" type="button" id="loadSopsBtn">Load SOPs Data</button><button class="btn btn-primary" type="button" id="generateSopsBtn">📄 Generate SOPs PNG</button></div></div>
+      <p class="report-note">Paste tab-separated rows: Team · Total Students Requiring Bookings · Students Identified for Assisted Booking · Coverage Rate · Attendance Rate.</p>
+      <textarea id="sopsInput" placeholder="Paste SOPs table here…"></textarea>
+      <div id="sopsDashboard"></div>
     </div>
   </section>
 
   <section class="report-tab" id="englishClubTab" hidden>
     <div class="section special-report">
-      <div class="section-header"><h2>🗣 English Club Report</h2><button class="btn btn-primary" type="button" id="generateEnglishClubBtn">📄 Generate English Club PNG</button></div>
-      <p class="report-note">Paste the English Club attendance, activities, feedback, and next actions. The generated PNG is separate from the call report.</p>
-      <textarea id="englishClubInput" placeholder="Paste English Club report content here…"></textarea>
+      <div class="section-header"><h2>🗣 English Club Report</h2><div class="header-actions"><button class="btn" type="button" id="loadEnglishClubBtn">Load English Club Data</button><button class="btn btn-primary" type="button" id="generateEnglishClubBtn">📄 Generate English Club PNG</button></div></div>
+      <p class="report-note">Paste the same tab-separated team table to analyze English Club bookings, coverage, and attendance.</p>
+      <textarea id="englishClubInput" placeholder="Paste English Club table here…"></textarea>
+      <div id="englishClubDashboard"></div>
     </div>
   </section>
 </div>
@@ -1509,13 +1511,82 @@ async function generateRankingReport(kind) {
   }
 }
 
-async function generateTextReport(inputId, title, filename) {
-  const content = document.getElementById(inputId).value.trim();
-  if (!content) {
-    showToast('Paste report content first');
+const bookingReports = { sops: [], englishClub: [] };
+
+function parseBookingRows(text) {
+  return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => line.split('\t').map(value => value.trim()))
+    .filter(cols => cols.length >= 5 && !/work location|dept6_name|total students requiring/i.test(cols[0]))
+    .map(cols => {
+      const number = value => Number(String(value || '').replace(/,/g, '')) || 0;
+      const rate = value => {
+        const parsed = parseFloat(String(value || '').replace('%', ''));
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const team = cols[0];
+      return { team, totalStudents: number(cols[1]), assistedStudents: number(cols[2]), coverage: rate(cols[3]), attendance: rate(cols[4]), isBig: /大组|EGSSTeam$/.test(team) };
+    }).filter(row => row.team);
+}
+
+function bookingPill(value, target) {
+  if (value === null) return '<span style="color:var(--text-secondary)">—</span>';
+  const tone = value >= target ? 'green' : value >= target * .7 ? 'amber' : 'red';
+  return `<span class="pill ${tone}">${value.toFixed(1)}%</span>`;
+}
+
+function weightedBookingRate(rows, field) {
+  const valid = rows.filter(row => row[field] !== null && row.totalStudents > 0);
+  const total = valid.reduce((sum, row) => sum + row.totalStudents, 0);
+  return total ? valid.reduce((sum, row) => sum + row[field] * row.totalStudents, 0) / total : null;
+}
+
+function renderBookingDashboard(kind, rows) {
+  const target = document.getElementById(kind === 'sops' ? 'sopsDashboard' : 'englishClubDashboard');
+  if (!rows.length) {
+    target.innerHTML = '';
     return;
   }
-  await captureCompactReport(title, 'Private dashboard report', `<div style="white-space:pre-wrap;line-height:1.7;font-size:16px;color:#1e293b;">${escapeHtml(content)}</div>`, `${filename}-${new Date().toISOString().slice(0, 10)}.png`);
+  const smallRows = rows.filter(row => !row.isBig);
+  const summaryRows = smallRows.length ? smallRows : rows;
+  const totalStudents = summaryRows.reduce((sum, row) => sum + row.totalStudents, 0);
+  const assistedStudents = summaryRows.reduce((sum, row) => sum + row.assistedStudents, 0);
+  const coverage = weightedBookingRate(summaryRows, 'coverage');
+  const attendance = weightedBookingRate(summaryRows, 'attendance');
+  const tableRows = rows.map(row => `
+    <tr class="${row.isBig ? 'total-row' : ''}">
+      <td><strong>${escapeHtml(row.team)}</strong></td>
+      <td class="num">${fmt(row.totalStudents)}</td>
+      <td class="num">${fmt(row.assistedStudents)}</td>
+      <td class="num">${bookingPill(row.coverage, 40)}</td>
+      <td class="num">${bookingPill(row.attendance, 60)}</td>
+    </tr>`).join('');
+  target.innerHTML = `
+    <div class="kpi-grid" style="margin:24px 0 20px;">
+      <div class="kpi-card"><h3>Total Students</h3><div class="kpi-value">${fmt(totalStudents)}</div><div class="kpi-sub">Small teams only; no double-counting</div></div>
+      <div class="kpi-card"><h3>Assisted Booking</h3><div class="kpi-value">${fmt(assistedStudents)}</div><div class="kpi-sub">SOP-identified students</div></div>
+      <div class="kpi-card"><h3>Coverage Rate</h3><div class="kpi-value">${coverage === null ? '—' : coverage.toFixed(1) + '%'}</div><div class="kpi-sub">Weighted by student count</div></div>
+      <div class="kpi-card"><h3>Attendance Rate</h3><div class="kpi-value">${attendance === null ? '—' : attendance.toFixed(1) + '%'}</div><div class="kpi-sub">Weighted by student count</div></div>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Work Location / Team</th><th class="num">Students Requiring Bookings</th><th class="num">Assisted Booking via SOP</th><th class="num">Coverage Rate</th><th class="num">Attendance Rate</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+}
+
+function loadBookingReport(kind) {
+  const inputId = kind === 'sops' ? 'sopsInput' : 'englishClubInput';
+  const rows = parseBookingRows(document.getElementById(inputId).value);
+  if (!rows.length) {
+    showToast('Paste a tab-separated booking table first');
+    return false;
+  }
+  bookingReports[kind] = rows;
+  renderBookingDashboard(kind, rows);
+  showToast(`${rows.length} team rows loaded`);
+  return true;
+}
+
+async function generateBookingReport(kind) {
+  if (!loadBookingReport(kind)) return;
+  const title = kind === 'sops' ? 'SOPs Booking Report' : 'English Club Booking Report';
+  const dashboardId = kind === 'sops' ? 'sopsDashboard' : 'englishClubDashboard';
+  await captureCompactReport(title, 'Coverage and attendance by big and small team', document.getElementById(dashboardId).innerHTML, `${kind}-booking-report-${new Date().toISOString().slice(0, 10)}.png`);
 }
 
 document.querySelectorAll('.workspace-tab').forEach(button => button.addEventListener('click', () => {
@@ -1529,8 +1600,10 @@ document.querySelectorAll('.workspace-tab').forEach(button => button.addEventLis
 }));
 document.getElementById('generateTop10Btn').addEventListener('click', () => generateRankingReport('top'));
 document.getElementById('generateBottom10Btn').addEventListener('click', () => generateRankingReport('bottom'));
-document.getElementById('generateSopsBtn').addEventListener('click', () => generateTextReport('sopsInput', 'SOPs Report', 'sops-report'));
-document.getElementById('generateEnglishClubBtn').addEventListener('click', () => generateTextReport('englishClubInput', 'English Club Report', 'english-club-report'));
+document.getElementById('loadSopsBtn').addEventListener('click', () => loadBookingReport('sops'));
+document.getElementById('loadEnglishClubBtn').addEventListener('click', () => loadBookingReport('englishClub'));
+document.getElementById('generateSopsBtn').addEventListener('click', () => generateBookingReport('sops'));
+document.getElementById('generateEnglishClubBtn').addEventListener('click', () => generateBookingReport('englishClub'));
 
 async function sendLatestReportToDingTalk() {
   if (!currentData.length) {
