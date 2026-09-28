@@ -626,6 +626,20 @@ const REQUESTED_SMALL_TEAMS = [
   'ME-EGSS-GCC02 Team','ME-EGSS-GCC04 Team','ME-EGSS-GCC06 Team'
 ];
 const REQUESTED_TEAM_SET = new Set(REQUESTED_SMALL_TEAMS);
+// Big-team performance is calculated from the small-team rows in the pasted CRM report.
+// Parent/Total rows are deliberately not used so a group cannot be counted twice.
+const BIG_TEAM_GROUPS = {
+  'ME-EGSS03大组': ['ME-EGSS23小组','ME-EGSS25小组','ME-EGSS03小组','ME-EGSS11小组','ME-EGSS16小组'],
+  'ME-EGSS06大组': ['ME-EGSS18小组','ME-EGSS26小组','ME-EGSS27小组','ME-EGSS28小组'],
+  'ME-EGSS04大组': ['ME-EGSS04小组','ME-EGSS06小组','ME-EGSS20小组','ME-EGSS21小组','ME-EGSS24小组'],
+  'ME-EGSS02大组': ['ME-EGSS02小组','ME-EGSS09小组','ME-EGSS08小组','ME-EGSS12小组','ME-EGSS29小组'],
+  'ME-EGSS08大组': ['ME-EGSS31小组','ME-EGSS32小组','ME-EGSS33小组','ME-EGSS34小组','ME-EGSS35小组','ME-EGSS36小组','ME-EGSS37小组','ME-EGSS38小组','ME-EGSS39小组','ME-EGSS14小组'],
+  'ME-EGSS05大组': ['ME-EGSS07小组','ME-EGSS15小组','ME-EGSS17小组','ME-EGSS19小组','ME-EGSS22小组'],
+  'ME-EGSS01大组': ['ME-EGSS01小组','ME-EGSS05小组','ME-EGSS10小组','ME-EGSS13小组','ME-EGSS30小组'],
+  'ME-Expired-EGSSTeam': ['ME-Expired-EGSS Team1','ME-Expired-EGSSTeam2','ME-Expired-EGSSTeam3'],
+  'MEGCC-EGSS01大组': ['ME-EGSS-GCC01 Team','ME-EGSS-GCC03 Team','ME-EGSS-GCC05 Team'],
+  'MEGCC-EGSS02大组': ['ME-EGSS-GCC02 Team','ME-EGSS-GCC04 Team','ME-EGSS-GCC06 Team']
+};
 // CRM uses the Chinese small-team suffix for GCC and omits one space in the
 // expired-team name. Normalize those variants before filtering or calculating.
 const TEAM_NAME_ALIASES = new Map([
@@ -846,12 +860,32 @@ function renderInsights(data) {
 
   const teamPerf = teams.map(team => {
     const members = data.filter(d => d.org_name === team);
-    const avgRate = members.length ? members.reduce((s, d) => s + d.effRate, 0) / members.length : 0;
-    return { team, avgRate, totalCalls: members.reduce((s, d) => s + d.totalCalls, 0) };
-  }).sort((a, b) => b.avgRate - a.avgRate);
+    const totalCalls = members.reduce((s, d) => s + d.totalCalls, 0);
+    const validCalls = members.reduce((s, d) => s + d.effectiveCalls, 0);
+    const effectiveRate = totalCalls ? (validCalls / totalCalls) * 100 : 0;
+    return { team, members: members.length, totalCalls, validCalls, effectiveRate };
+  }).filter(team => team.members > 0).sort((a, b) => b.effectiveRate - a.effectiveRate || b.validCalls - a.validCalls);
 
-  const bestTeam = teamPerf[0];
-  const worstTeam = teamPerf[teamPerf.length - 1];
+  const bestSmallTeam = teamPerf[0];
+  const worstSmallTeam = teamPerf[teamPerf.length - 1];
+  const bigTeamPerf = Object.entries(BIG_TEAM_GROUPS).map(([team, children]) => {
+    const members = data.filter(agent => children.includes(agent.org_name));
+    const totalCalls = members.reduce((s, agent) => s + agent.totalCalls, 0);
+    const validCalls = members.reduce((s, agent) => s + agent.effectiveCalls, 0);
+    return { team, members: members.length, totalCalls, validCalls, effectiveRate: totalCalls ? (validCalls / totalCalls) * 100 : 0 };
+  }).filter(team => team.members > 0).sort((a, b) => b.effectiveRate - a.effectiveRate || b.validCalls - a.validCalls);
+  const bestBigTeam = bigTeamPerf[0];
+  const worstBigTeam = bigTeamPerf[bigTeamPerf.length - 1];
+
+  const teamRankingCard = (icon, title, team, tone) => team ? `
+    <div class="insight-card" style="border-top:4px solid ${tone};">
+      <h3>${icon} ${title}</h3>
+      <ul>
+        <li><span class="agent-name">${team.team}</span></li>
+        <li>Effective rate: <strong>${team.effectiveRate.toFixed(2)}%</strong></li>
+        <li>Valid calls: <strong>${fmt(team.validCalls)}</strong> · Members: <strong>${fmt(team.members)}</strong></li>
+      </ul>
+    </div>` : '';
 
   let html = '';
 
@@ -888,29 +922,10 @@ function renderInsights(data) {
     `;
   }
 
-  if (bestTeam) {
-    html += `
-      <div class="insight-card">
-        <h3>📈 Best performing team: ${bestTeam.team}</h3>
-        <ul>
-          <li>Effective call rate: <strong>${bestTeam.avgRate.toFixed(1)}%</strong></li>
-          <li>Total calls: <strong>${bestTeam.totalCalls}</strong></li>
-        </ul>
-      </div>
-    `;
-  }
-
-  if (worstTeam && worstTeam.team !== bestTeam.team) {
-    html += `
-      <div class="insight-card">
-        <h3>📉 Lowest performing team: ${worstTeam.team}</h3>
-        <ul>
-          <li>Effective call rate: <strong>${worstTeam.avgRate.toFixed(1)}%</strong> — consider coaching.</li>
-          <li>Total calls: <strong>${worstTeam.totalCalls}</strong></li>
-        </ul>
-      </div>
-    `;
-  }
+  html += teamRankingCard('🏆', 'Highest Small Team', bestSmallTeam, '#10b981');
+  if (worstSmallTeam && worstSmallTeam.team !== bestSmallTeam?.team) html += teamRankingCard('📉', 'Lowest Small Team', worstSmallTeam, '#ef4444');
+  html += teamRankingCard('🏆', 'Highest Big Team', bestBigTeam, '#2563eb');
+  if (worstBigTeam && worstBigTeam.team !== bestBigTeam?.team) html += teamRankingCard('📉', 'Lowest Big Team', worstBigTeam, '#f97316');
 
   if (longDur.length > 0) {
     html += `
@@ -1340,6 +1355,7 @@ async function generateReportPng() {
 
   const rankingsEl = document.getElementById('agentRankingsSection').cloneNode(true);
   const rankingsClone = rankingsEl.outerHTML;
+  const insightsClone = `<div class="section"><div class="section-header"><h2>Team Performance Highlights</h2></div>${document.getElementById('insightsGrid').outerHTML}</div>`;
 
   // Build report content
   reportContainer.innerHTML = `
@@ -1369,6 +1385,7 @@ async function generateReportPng() {
       ${ragTableHtml}
       ${kpiClone}
       ${rankingsClone}
+      ${insightsClone}
       ${teamTotalsClone}
       ${teamDetailClone}
       <div style="margin-top:28px;padding:24px;background:linear-gradient(135deg,#4f46e5,#06b6d4);border-radius:var(--radius);color:white;text-align:center;font-size:20px;font-weight:700;letter-spacing:-0.01em;">
