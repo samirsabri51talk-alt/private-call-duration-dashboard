@@ -445,7 +445,7 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" id="teamDetailSection">
       <div class="section-header">
         <h2>Small Team & Agent Detail</h2>
       </div>
@@ -506,6 +506,22 @@ const PARENT_OR_TOTAL_TEAMS = new Set([
   'ME-EGSS08大组', 'ME-EGSS05大组', 'ME-EGSS01大组',
   'ME-Expired-EGSSTeam', 'MEGCC-EGSS01大组', 'MEGCC-EGSS02大组', 'Total'
 ]);
+// The report is intentionally limited to the small teams requested by the owner.
+// Team members are taken directly from each pasted CRM report; no names are invented.
+const REQUESTED_SMALL_TEAMS = [
+  'ME-EGSS23小组','ME-EGSS25小组','ME-EGSS03小组','ME-EGSS11小组','ME-EGSS16小组',
+  'ME-EGSS18小组','ME-EGSS26小组','ME-EGSS27小组','ME-EGSS28小组','ME-EGSS04小组',
+  'ME-EGSS06小组','ME-EGSS20小组','ME-EGSS21小组','ME-EGSS24小组','ME-EGSS02小组',
+  'ME-EGSS09小组','ME-EGSS08小组','ME-EGSS12小组','ME-EGSS29小组','ME-EGSS31小组',
+  'ME-EGSS32小组','ME-EGSS33小组','ME-EGSS34小组','ME-EGSS35小组','ME-EGSS36小组',
+  'ME-EGSS37小组','ME-EGSS38小组','ME-EGSS39小组','ME-EGSS14小组','ME-EGSS07小组',
+  'ME-EGSS15小组','ME-EGSS17小组','ME-EGSS19小组','ME-EGSS22小组','ME-EGSS01小组',
+  'ME-EGSS05小组','ME-EGSS10小组','ME-EGSS13小组','ME-EGSS30小组',
+  'ME-Expired-EGSS Team1','ME-Expired-EGSSTeam2','ME-Expired-EGSSTeam3',
+  'ME-EGSS-GCC01 Team','ME-EGSS-GCC03 Team','ME-EGSS-GCC05 Team',
+  'ME-EGSS-GCC02 Team','ME-EGSS-GCC04 Team','ME-EGSS-GCC06 Team'
+];
+const REQUESTED_TEAM_SET = new Set(REQUESTED_SMALL_TEAMS);
 
 function getTargets() {
   return {
@@ -562,7 +578,9 @@ function parseAllAgents(text) {
 
 function getFilteredData() {
   return allParsedAgents.filter(d =>
-    !excludedAgents.has(d.useraccount) && !PARENT_OR_TOTAL_TEAMS.has(d.org_name)
+    !excludedAgents.has(d.useraccount) &&
+    !PARENT_OR_TOTAL_TEAMS.has(d.org_name) &&
+    REQUESTED_TEAM_SET.has(d.org_name)
   );
 }
 
@@ -660,7 +678,9 @@ function renderExcludeTags() {
 
 function renderInsights(data) {
   const targets = getTargets();
-  const teams = [...new Set(data.map(d => d.org_name))];
+  // Preserve the requested team order and include an empty card when a team has no
+  // members in the pasted report, making missing CRM data immediately visible.
+  const teams = REQUESTED_SMALL_TEAMS;
 
   const zeroEff = data.filter(d => d.effectiveCalls === 0);
   const highPerf = data.filter(d => d.effRate >= 50).sort((a,b) => b.effRate - a.effRate);
@@ -792,8 +812,8 @@ function renderDashboard(data) {
       members: members.length,
       totalEffCalls: members.reduce((s, d) => s + d.effectiveCalls, 0),
       totalDuration: members.reduce((s, d) => s + d.totalDuration, 0),
-      avgEffCalls: members.reduce((s, d) => s + d.effectiveCalls, 0) / members.length,
-      avgCallTime: members.reduce((s, d) => s + d.avgDuration, 0) / members.length
+      avgEffCalls: members.length ? members.reduce((s, d) => s + d.effectiveCalls, 0) / members.length : 0,
+      avgCallTime: members.length ? members.reduce((s, d) => s + d.avgDuration, 0) / members.length : 0
     };
   });
 
@@ -1078,11 +1098,9 @@ async function generateReportPng() {
   teamTotalsBtns.forEach(b => b.remove());
   const teamTotalsClone = teamTotalsEl.outerHTML;
 
-  // Clone agent detail (strip download buttons)
-  const agentDetailEl = document.getElementById('agentDetailSection').cloneNode(true);
-  const agentDetailBtns = agentDetailEl.querySelectorAll('button');
-  agentDetailBtns.forEach(b => b.remove());
-  const agentDetailClone = agentDetailEl.outerHTML;
+  // Include every requested small team and its CRM-reported members in the PNG.
+  const teamDetailEl = document.getElementById('teamDetailSection').cloneNode(true);
+  const teamDetailClone = teamDetailEl.outerHTML;
 
   // Build report content
   reportContainer.innerHTML = `
@@ -1100,7 +1118,7 @@ async function generateReportPng() {
       ${ragTableHtml}
       ${kpiClone}
       ${teamTotalsClone}
-      ${agentDetailClone}
+      ${teamDetailClone}
       <div style="margin-top:28px;padding:24px;background:linear-gradient(135deg,#4f46e5,#06b6d4);border-radius:var(--radius);color:white;text-align:center;font-size:20px;font-weight:700;letter-spacing:-0.01em;">
         High coverage = High conversion!!
       </div>
