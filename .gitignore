@@ -1,0 +1,5 @@
+# DingTalk credentials must stay outside Git.
+.env
+.env.*
+!.env.example
+
