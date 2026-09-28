@@ -286,7 +286,9 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
 }
 
 .team-detail-grid {
-  display: grid; grid-template-columns: repeat(2, 1fr);
+  /* Each team contains a nine-column report table. A single full-width column
+     prevents the second card from overflowing or being clipped in the PNG. */
+  display: grid; grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }
 .team-detail-card {
@@ -1188,6 +1190,7 @@ async function generateReportPng() {
 
   // Include every requested small team and its CRM-reported members in the PNG.
   const teamDetailEl = document.getElementById('teamDetailSection').cloneNode(true);
+  teamDetailEl.querySelector('.team-detail-grid').style.gridTemplateColumns = 'minmax(0, 1fr)';
   const teamDetailClone = teamDetailEl.outerHTML;
 
   const rankingsEl = document.getElementById('agentRankingsSection').cloneNode(true);
