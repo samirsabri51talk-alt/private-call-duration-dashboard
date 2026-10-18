@@ -268,6 +268,12 @@ body {
 .special-report { max-width:900px; margin:0 auto; }
 .special-report textarea { min-height:260px; width:100%; resize:vertical; margin:16px 0; padding:16px; border:1px solid var(--border); border-radius:14px; font:inherit; line-height:1.55; background:#fff; color:var(--text); }
 .report-note { color:var(--text-secondary); line-height:1.55; margin:0; }
+.team-visibility-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin-top:14px; max-height:360px; overflow:auto; padding:4px; }
+.team-choice { display:flex; align-items:center; gap:9px; min-width:0; padding:10px 11px; background:#fff; border:1px solid var(--border); border-radius:12px; color:var(--text); font-size:12px; font-weight:650; cursor:pointer; }
+.team-choice:hover { border-color:#818cf8; background:#f8faff; }
+.team-choice input { accent-color:var(--primary); width:16px; height:16px; flex:0 0 auto; }
+.team-choice span { overflow-wrap:anywhere; }
+.team-visibility-status { color:var(--text-secondary); font-size:13px; font-weight:600; }
 
 .section {
   background: var(--card); border: 1px solid var(--border);
@@ -397,6 +403,7 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
   .team-detail-grid { grid-template-columns: 1fr; }
   .agent-ranking-grid { grid-template-columns: 1fr; }
   .insights-grid { grid-template-columns: 1fr; }
+  .team-visibility-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 640px) {
   .kpi-grid { grid-template-columns: 1fr; }
@@ -404,6 +411,7 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
   .header { flex-direction: column; align-items: flex-start; }
   th, td { padding: 10px 12px; font-size: 12px; }
   .rag-table th, .rag-table td { padding: 8px 10px; font-size: 11px; }
+  .team-visibility-list { grid-template-columns:1fr; }
 }
 </style>
 </head>
@@ -472,7 +480,7 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
   </div>
 
   <div class="exclude-panel" id="teamExcludePanel">
-    <h3>🚫 Exclude Teams</h3>
+    <h3>🚫 Hide Individual Teams</h3>
     <p>Remove an entire small team and all of its agents from this dashboard and downloaded reports.</p>
     <div class="exclude-tags" id="excludeTeamTags"></div>
     <div class="exclude-input-row">
@@ -480,6 +488,21 @@ tbody tr:hover td { background: rgba(148,163,184,0.04); }
       <select id="excludeTeamSelect"><option value="">-- Select team --</option></select>
       <button class="btn" id="addExcludeTeamBtn">Add</button>
     </div>
+  </div>
+
+  <div class="exclude-panel" id="teamVisibilityPanel">
+    <div class="section-header" style="margin-bottom:8px;">
+      <div><h3>👁 Choose Teams to Show</h3><p>Choose multiple teams. Only checked teams appear in the dashboard and generated PNG reports.</p></div>
+      <div class="header-actions">
+        <button class="btn" type="button" id="selectAllTeamsBtn">Select all</button>
+        <button class="btn" type="button" id="deselectAllTeamsBtn">Deselect all</button>
+      </div>
+    </div>
+    <div class="exclude-input-row">
+      <input type="search" id="teamVisibilitySearch" class="exclude-search" placeholder="Search teams to show…" aria-label="Search teams to show">
+      <span class="team-visibility-status" id="teamVisibilityStatus"></span>
+    </div>
+    <div class="team-visibility-list" id="teamVisibilityList" aria-label="Teams to show"></div>
   </div>
 
   <div class="data-panel">
@@ -606,6 +629,7 @@ ME-EGSS20	EGSS-nada	2024-01-15 09:00	2024-01-15 17:15	2024-01-15 09:15	2024-01-1
 let currentData = [];
 let excludedAgents = new Set();
 let excludedTeams = new Set();
+let visibleTeams = new Set();
 let allParsedAgents = []; // all agents from data input (before exclusion)
 const PARENT_OR_TOTAL_TEAMS = new Set([
   'ME-EGSS03大组', 'ME-EGSS06大组', 'ME-EGSS02大组',
@@ -715,13 +739,14 @@ function getFilteredData() {
   return allParsedAgents.filter(d =>
     !excludedAgents.has(d.useraccount) &&
     !excludedTeams.has(d.org_name) &&
+    visibleTeams.has(d.org_name) &&
     !PARENT_OR_TOTAL_TEAMS.has(d.org_name) &&
     REQUESTED_TEAM_SET.has(d.org_name)
   );
 }
 
 function getActiveTeams() {
-  return REQUESTED_SMALL_TEAMS.filter(team => !excludedTeams.has(team));
+  return REQUESTED_SMALL_TEAMS.filter(team => visibleTeams.has(team) && !excludedTeams.has(team));
 }
 
 /* ── RAG Logic based on percentage of target ── */
@@ -847,6 +872,29 @@ function renderTeamExcludeTags() {
       if (allParsedAgents.length) renderDashboard(getFilteredData());
     });
   });
+}
+
+function refreshVisibleTeams() {
+  if (allParsedAgents.length) renderDashboard(getFilteredData());
+  updateTeamExcludeDropdown();
+  renderTeamVisibilityList();
+}
+
+function renderTeamVisibilityList() {
+  const list = document.getElementById('teamVisibilityList');
+  const query = document.getElementById('teamVisibilitySearch').value.trim().toLowerCase();
+  const filtered = REQUESTED_SMALL_TEAMS.filter(team => !query || team.toLowerCase().includes(query));
+  document.getElementById('teamVisibilityStatus').textContent = `${visibleTeams.size} of ${REQUESTED_SMALL_TEAMS.length} selected`;
+  list.innerHTML = filtered.length ? filtered.map(team => `
+    <label class="team-choice">
+      <input type="checkbox" data-team="${team}" ${visibleTeams.has(team) ? 'checked' : ''}>
+      <span>${team}</span>
+    </label>`).join('') : '<span class="team-visibility-status">No teams match your search.</span>';
+  list.querySelectorAll('input[data-team]').forEach(input => input.addEventListener('change', () => {
+    if (input.checked) visibleTeams.add(input.dataset.team);
+    else visibleTeams.delete(input.dataset.team);
+    refreshVisibleTeams();
+  }));
 }
 
 function renderInsights(data) {
@@ -1223,6 +1271,19 @@ document.getElementById('loadDataBtn').addEventListener('click', () => {
 
 document.getElementById('employeeSearch').addEventListener('input', updateExcludeDropdown);
 document.getElementById('teamSearch').addEventListener('input', updateTeamExcludeDropdown);
+document.getElementById('teamVisibilitySearch').addEventListener('input', renderTeamVisibilityList);
+document.getElementById('selectAllTeamsBtn').addEventListener('click', () => {
+  visibleTeams = new Set(REQUESTED_SMALL_TEAMS);
+  excludedTeams.clear();
+  renderTeamExcludeTags();
+  refreshVisibleTeams();
+  showToast('All teams selected');
+});
+document.getElementById('deselectAllTeamsBtn').addEventListener('click', () => {
+  visibleTeams.clear();
+  refreshVisibleTeams();
+  showToast('All teams deselected');
+});
 
 
 
@@ -1246,6 +1307,7 @@ document.getElementById('addExcludeBtn').addEventListener('click', addExclude);
 document.getElementById('addExcludeTeamBtn').addEventListener('click', addTeamExclude);
 
 window.addEventListener('DOMContentLoaded', () => {
+  visibleTeams = new Set(REQUESTED_SMALL_TEAMS);
   document.getElementById('dataInput').value = SAMPLE_DATA;
   renderExcludeTags();
   renderTeamExcludeTags();
@@ -1253,6 +1315,7 @@ window.addEventListener('DOMContentLoaded', () => {
   allParsedAgents = parseAllAgents(SAMPLE_DATA);
   updateExcludeDropdown();
   updateTeamExcludeDropdown();
+  renderTeamVisibilityList();
   const data = getFilteredData();
   renderDashboard(data);
 });
