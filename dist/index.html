@@ -907,6 +907,23 @@ function renderInsights(data) {
   const highPerf = data.filter(d => d.effRate >= 50).sort((a,b) => b.effRate - a.effRate);
   const lowEff = data.filter(d => d.totalCalls >= 20 && d.effRate < 20).sort((a,b) => a.effRate - b.effRate);
   const longDur = data.filter(d => d.avgDuration > 15).sort((a,b) => b.avgDuration - a.avgDuration);
+  // Compare each agent against this report's own distribution, so "many/few"
+  // continues to make sense when the overall call volume changes.
+  const percentile = (values, p) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    if (!sorted.length) return 0;
+    return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))];
+  };
+  const highCallThreshold = percentile(data.map(d => d.totalCalls), .75);
+  const lowCallThreshold = percentile(data.map(d => d.totalCalls), .25);
+  const lowMinuteThreshold = percentile(data.map(d => d.totalDuration), .25);
+  const highMinuteThreshold = percentile(data.map(d => d.totalDuration), .75);
+  const highCallsLowMinutes = data.length >= 4 ? data
+    .filter(d => d.totalCalls >= highCallThreshold && d.totalDuration <= lowMinuteThreshold)
+    .sort((a, b) => b.totalCalls - a.totalCalls || a.totalDuration - b.totalDuration) : [];
+  const lowCallsHighMinutes = data.length >= 4 ? data
+    .filter(d => d.totalCalls <= lowCallThreshold && d.totalDuration >= highMinuteThreshold)
+    .sort((a, b) => b.totalDuration - a.totalDuration || a.totalCalls - b.totalCalls) : [];
 
   const teamPerf = teams.map(team => {
     const members = data.filter(d => d.org_name === team);
@@ -967,6 +984,30 @@ function renderInsights(data) {
         <h3>⚠️ ${lowEff.length} agent(s) with low effective rate</h3>
         <ul>
           <li>High call volume but low success: ${lowEff.map(d => `<span class="agent-name">${d.useraccount}</span> (${d.effRate.toFixed(2)}%)`).join(', ')}</li>
+        </ul>
+      </div>
+    `;
+  }
+
+  if (highCallsLowMinutes.length > 0) {
+    html += `
+      <div class="insight-card" style="border-top:4px solid #f59e0b;">
+        <h3>⚠️ High calls, low total minutes</h3>
+        <ul>
+          <li>Compared with this report: ≥ ${fmt(highCallThreshold)} calls and ≤ ${fmt(lowMinuteThreshold)} effective min.</li>
+          ${highCallsLowMinutes.slice(0, 10).map(d => `<li><span class="agent-name">${d.useraccount}</span> · ${d.org_name} — <strong>${fmt(d.totalCalls)}</strong> calls, <strong>${fmt(d.totalDuration)} min</strong>, ${fmt(d.avgDuration)} min/call</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  if (lowCallsHighMinutes.length > 0) {
+    html += `
+      <div class="insight-card" style="border-top:4px solid #8b5cf6;">
+        <h3>⏱️ Low calls, high total minutes</h3>
+        <ul>
+          <li>Compared with this report: ≤ ${fmt(lowCallThreshold)} calls and ≥ ${fmt(highMinuteThreshold)} effective min.</li>
+          ${lowCallsHighMinutes.slice(0, 10).map(d => `<li><span class="agent-name">${d.useraccount}</span> · ${d.org_name} — <strong>${fmt(d.totalCalls)}</strong> calls, <strong>${fmt(d.totalDuration)} min</strong>, ${fmt(d.avgDuration)} min/call</li>`).join('')}
         </ul>
       </div>
     `;
